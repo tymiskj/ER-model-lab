@@ -1,0 +1,45 @@
+erDiagram
+    User {
+        string id PK "UUID"
+        string name
+        string email
+        string phone
+        datetime created_at
+    }
+
+    Restaurant {
+        string id PK "UUID"
+        string name
+        string address
+        float rating
+    }
+
+    Dish {
+        string id PK "UUID"
+        string restaurant_id FK "UUID"
+        string title
+        decimal price
+        boolean is_available
+    }
+
+    Order {
+        string id PK "UUID"
+        string user_id FK "UUID"
+        string restaurant_id FK "UUID"
+        string status
+        decimal total_amount
+        datetime created_at
+    }
+
+    Courier {
+        string id PK "UUID"
+        string full_name
+        string vehicle_type
+        boolean is_active
+    }
+
+    %% Зв'язки (Кардинальності)
+    User ||--o{ Order : places
+    Restaurant ||--o{ Dish : offers
+    Restaurant ||--o{ Order : processes
+    Order ||--|| Courier : delivered_by
