@@ -1,4 +1,11 @@
 erDiagram
+    User ||--o{ Order : places
+    Restaurant ||--o{ Dish : offers
+    Restaurant ||--o{ Order : processes
+    Courier ||--o{ Order : delivers
+    Order ||--|{ OrderItem : contains
+    Dish ||--o{ OrderItem : included_in
+
     User {
         string id PK "UUID"
         string name
@@ -26,9 +33,18 @@ erDiagram
         string id PK "UUID"
         string user_id FK "UUID"
         string restaurant_id FK "UUID"
+        string courier_id FK "UUID"
         string status
         decimal total_amount
         datetime created_at
+    }
+
+    OrderItem {
+        string id PK "UUID"
+        string order_id FK "UUID"
+        string dish_id FK "UUID"
+        int quantity
+        decimal price_at_order
     }
 
     Courier {
@@ -37,9 +53,3 @@ erDiagram
         string vehicle_type
         boolean is_active
     }
-
-    %% Зв'язки (Кардинальності)
-    User ||--o{ Order : places
-    Restaurant ||--o{ Dish : offers
-    Restaurant ||--o{ Order : processes
-    Order ||--|| Courier : delivered_by
