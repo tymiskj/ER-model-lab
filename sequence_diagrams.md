@@ -157,3 +157,137 @@ sequenceDiagram
     deactivate OS
     deactivate UI
 ```
+
+---
+
+## Scenario 4: Підтвердження оплати від платіжного шлюзу (UC-5)
+
+```mermaid
+sequenceDiagram
+    actor Client as Клієнт
+    participant UI as OrderUI
+    participant PS as PaymentService
+    actor PG as Платіжний шлюз
+    participant OS as OrderService
+    participant Order as Order (ER)
+    participant Restaurant as Restaurant (ER)
+
+    Client->>UI: payOrder(orderId)
+    activate UI
+    UI->>PS: initPaymentSession(orderId)
+    activate PS
+
+    PS->>Order: getOrderForPayment(orderId)
+    activate Order
+    Order-->>PS: orderData(restaurantId, status="created", total_amount)
+    deactivate Order
+
+    PS->>PG: createTransaction(orderId, total_amount, callbackUrl)
+    activate PG
+    PG-->>PS: transactionUrl
+    deactivate PG
+
+    PS-->>UI: redirectUrl(transactionUrl)
+    deactivate PS
+    UI-->>Client: openPaymentPage(transactionUrl)
+    deactivate UI
+
+    Client->>PG: confirmPayment(orderId, paymentDetails)
+    activate PG
+    PG->>PS: sendPaymentCallback(orderId, signature, "SUCCESS")
+    activate PS
+
+    opt Перевірка підпису та ідемпотентності callback
+        PS->>PS: verifyWebhookSignature(signature)
+        PS->>Order: getOrderStatus(orderId)
+        activate Order
+        Order-->>PS: currentStatus("created")
+        deactivate Order
+    end
+
+    alt Підпис валідний та Order.status == "created"
+        PS->>OS: confirmOrderPayment(orderId)
+        activate OS
+        OS->>Order: updateStatus(orderId, "preparing")
+        activate Order
+        Order-->>OS: orderUpdated(orderId, status="preparing")
+        deactivate Order
+
+        par Передача в роботу ресторану та сповіщення клієнта
+            OS->>Restaurant: getRestaurantNotificationTarget(restaurantId)
+            activate Restaurant
+            Restaurant-->>OS: restaurantChannel
+            deactivate Restaurant
+        and Оновлення екрана клієнта
+            OS-->>UI: notifyPaymentSuccess(orderId, "preparing")
+            activate UI
+            UI-->>Client: showOrderPreparingScreen(orderId)
+            deactivate UI
+        end
+
+        OS-->>PS: orderDispatched(true)
+        deactivate OS
+        PS-->>PG: callbackAck(200)
+    else Невалідний підпис або повторний callback
+        PS-->>PG: callbackAck(400)
+    end
+
+    deactivate PS
+    deactivate PG
+```
+
+---
+
+## Scenario 5: Скасування замовлення при відмові оплати або таймауті (UC-5)
+
+```mermaid
+sequenceDiagram
+    actor Client as Клієнт
+    participant UI as OrderUI
+    participant PS as PaymentService
+    actor PG as Платіжний шлюз
+    participant OS as OrderService
+    participant Order as Order (ER)
+
+    Client->>UI: awaitPaymentOutcome(orderId)
+    activate UI
+    UI->>PS: trackPaymentStatus(orderId)
+    activate PS
+
+    PS->>Order: getOrderStatus(orderId)
+    activate Order
+    Order-->>PS: orderStatus("created")
+    deactivate Order
+
+    alt Платіжний шлюз повертає callback про відмову списання
+        PG->>PS: sendPaymentCallback(orderId, signature, "FAILED")
+        activate PG
+        PS->>PS: setCancellationReason("PaymentDeclined")
+        PS-->>PG: callbackAck(200)
+        deactivate PG
+    else Спливає 15 хвилин очікування оплати (таймаут)
+        loop Періодична перевірка прострочених замовлень (кожні 60 с)
+            PS->>Order: checkPaymentTimeout(orderId, created_at)
+            activate Order
+            Order-->>PS: isExpired(true)
+            deactivate Order
+        end
+        PS->>PS: setCancellationReason("PaymentTimeout")
+    end
+
+    opt Поточний статус досі "created"
+        PS->>OS: cancelUnpaidOrder(orderId, reason)
+        activate OS
+        OS->>Order: updateStatus(orderId, "cancelled")
+        activate Order
+        Order-->>OS: orderUpdated(orderId, status="cancelled")
+        deactivate Order
+        OS-->>PS: cancellationConfirmed(orderId)
+        deactivate OS
+    end
+
+    PS-->>UI: notifyOrderCancelled(orderId, reason)
+    deactivate PS
+    UI-->>Client: showPaymentCancelledAlert(reason)
+    deactivate UI
+```
