@@ -107,3 +107,53 @@ sequenceDiagram
     deactivate OS
     deactivate UI
 ```
+
+---
+
+## Scenario 3: Успішне застосування промокоду під час оформлення (UC-6)
+
+```mermaid
+sequenceDiagram
+    actor Client as Клієнт
+    participant UI as OrderUI
+    participant OS as OrderService
+    participant Order as Order (ER)
+    participant PromoConfig as PromoConfigService
+
+    Client->>UI: applyPromocode(orderId, promoCode)
+    activate UI
+    UI->>OS: validateAndApplyPromo(orderId, promoCode)
+    activate OS
+
+    OS->>Order: getOrderSummary(orderId)
+    activate Order
+    Order-->>OS: orderSummary(status="created", total_amount)
+    deactivate Order
+
+    OS->>PromoConfig: checkPromoRules(promoCode, total_amount)
+    activate PromoConfig
+
+    alt Промокод відповідає чинним конфігураційним правилам
+        PromoConfig-->>OS: promoValid(discountType, discountValue)
+
+        opt Знижка потребує перерахунку відсотків або ліміту
+            OS->>OS: calculateDiscountedTotal(total_amount, discountType, discountValue)
+        end
+
+        OS->>Order: updateTotalAmount(orderId, updatedTotal)
+        activate Order
+        Order-->>OS: orderUpdated(orderId, updatedTotal)
+        deactivate Order
+
+        OS-->>UI: promoApplied(updatedTotal, paymentUrl)
+        UI-->>Client: showUpdatedTotalAndProceedToPayment(updatedTotal)
+    else Промокод недійсний або не виконано умови мінімальної суми
+        PromoConfig-->>OS: promoRejected("InvalidPromocode")
+        OS-->>UI: promoError("InvalidPromocode")
+        UI-->>Client: showPromocodeError(total_amount)
+    end
+
+    deactivate PromoConfig
+    deactivate OS
+    deactivate UI
+```
