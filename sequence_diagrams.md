@@ -219,7 +219,7 @@ sequenceDiagram
             Restaurant-->>OS: restaurantChannel
             deactivate Restaurant
         and Оновлення екрана клієнта
-            OS-->>UI: notifyPaymentSuccess(orderId, "preparing")
+            OS->>UI: notifyPaymentSuccess(orderId, "preparing")
             activate UI
             UI-->>Client: showOrderPreparingScreen(orderId)
             deactivate UI
@@ -260,8 +260,8 @@ sequenceDiagram
     deactivate Order
 
     alt Платіжний шлюз повертає callback про відмову списання
-        PG->>PS: sendPaymentCallback(orderId, signature, "FAILED")
         activate PG
+        PG->>PS: sendPaymentCallback(orderId, signature, "FAILED")
         PS->>PS: setCancellationReason("PaymentDeclined")
         PS-->>PG: callbackAck(200)
         deactivate PG
