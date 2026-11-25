@@ -207,3 +207,54 @@
 1. **Роль `Ресторан (Restaurant)` як окрема доріжка процесу (Activity ↔ UC / Sequence):** у `use_case_diagram.md` із закладом взаємодіє актор `Manager` у межах `UC-3`, а в `sequence_diagrams.md` сутність `Restaurant` представлена як пасивна таблиця БД. **Рішення:** на Activity-діаграмі виділено доріжку `Ресторан (Restaurant)` для наочного показу точки прийому вхідного повідомлення `notifyRestaurant` на межі завершення `UC-2` і старту `UC-3`.
 2. **Об'єднання шару `OrderUI` із доріжками клієнта та системи (Activity ↔ Sequence):** у sequence-діаграмах третьої лаби `OrderUI` виділено окремим учасником для деталізації клієнт-серверного обміну. **Рішення:** у бізнес-процесі інтерфейсний компонент об'єднано з ролями `Клієнт` та `Система замовлень`, щоб уникнути технічного дублювання кроків і зберегти фокус на бізнес-ролях.
 3. **Паралельне розсилання сповіщень `Fork 2 / Join 2` проти послідовного опису в Gherkin (Activity ↔ Lab 2):** у Gherkin Scenario 4 (`spec.md` §7) зміна статусу та передача замовлення закладу описані послідовно. **Рішення:** на діаграмі процесу після оновлення `Order.status = preparing` використано паралельний блок `Fork 2 → Join 2`, що синхронізує Activity-діаграму з блоком `par` у Scenario 4 третьої лаби.
+
+---
+
+## 15. Компонентна архітектура системи (Lab 5: UML Component Diagram)
+
+### 15.1. Вибір нотації та межі системи
+Компонентну модель побудовано у декларативній нотації `Mermaid` (`component_diagram.md`) із використанням UML-стереотипів (`«component»`, `«interface»`, `«database»`, `«external system»`), чіткої межі системи (`System Boundary`) та явного позначення інтерфейсів, що надаються (`provided`) і вимагаються (`required`). Такий формат забезпечує нативний рендер діаграми в GitHub без зовнішніх бінарних файлів і зберігає сувору UML-семантику інтерфейсів.
+
+### 15.2. Внутрішні модулі та зовнішні інтеграції
+**Внутрішні шари та компоненти (у межах системи):**
+1. **UI (`Web Client UI`):** клієнтський веб-інтерфейс (`OrderUI` та екрани перегляду каталогу, кабінету менеджера й кур'єра); вимагає публічні API-інтерфейси (`IOrderAPI`, `ICatalogAPI`, `IOpsAPI`).
+2. **API / Backend (`REST API Gateway`):** єдина точка входу в систему (`TLS 1.3`), відповідає за маршрутизацію запитів (`POST /api/orders`), перевірку токенів і прав доступу (`RBAC`) та прийом зовнішніх платіжних сповіщень (`IPaymentWebhook`); надає клієнтські API-інтерфейси (`provided`).
+3. **Сервіси бізнес-логіки (`Application Services`):**
+   - `OrderService` — координує створення замовлення (`status = created`), перевірку доступності страв і переходи життєвого циклу `Order.status` (`created → preparing → delivering → completed / cancelled`); надає `IOrderService`.
+   - `PromoConfigService` — виконує перевірку промокодів за статичною конфігурацією (`REQ-ORD-05`) без звернення до БД; надає `IPromoConfig`.
+   - `PaymentService` — ініціює платіжні сесії, перевіряє підписи callback-повідомлень та відстежує 15-хвилинний таймаут від `Order.created_at`; надає `IPaymentService`.
+   - `Catalog & Operations Service` — обслуговує перегляд закладів і страв (`UC-1`), управління меню та прийом замовлень менеджером (`UC-3`), а також доставку кур'єром (`UC-4`); надає `ICatalogService` та `IOpsService`.
+4. **Data Access (`Data Access Layer / Repositories`):** ізолює бізнес-логіку від SQL-запитів, інкапсулюючи операції читання й запису для сутностей `User`, `Restaurant`, `Dish`, `Order`, `OrderItem`, `Courier`; надає `IOrderRepository` та `ICatalogRepository`.
+5. **БД (`PostgreSQL Database 3NF`):** реляційна база даних із 6 нормалізованими таблицями із Завдання 1 (`er_diagram.mermaid`); надає інтерфейс з'єднання `ISQLConnection`.
+
+**Зовнішні інтеграції (поза межею системи):**
+1. **`Payment Gateway` (Зовнішній платіжний шлюз):** надає `IPaymentGatewayClient` для створення платіжної транзакції та викликає `IPaymentWebhook` системи для передачі результату оплати (`SUCCESS` / `FAILED`).
+2. **`Notification Provider` (Сервіс сповіщень Push / Email / SMS):** надає `INotificationGateway` для доставки сповіщень клієнту (`notifyPaymentSuccess`, `notifyOrderCancelled`) та закладу (`notifyRestaurant`).
+3. **`Identity / Auth Provider` (Сервіс автентифікації OAuth2 / JWT):** надає `IAuthVerify` для перевірки облікових записів і рольових прав (`Client`, `Manager`, `Courier`) на рівні шлюзу без розширення 3NF-схеми БД.
+
+### 15.3. Аудит компонентної моделі та трасування (Lab 5 Audit)
+
+#### 1. Перевірка межі системи та інтерфейсів (`provided` / `required`)
+- **Чіткість межі системи (`System Boundary`):** усі внутрішні прикладні шари (`Web Client UI`, `REST API Gateway`, 4 сервіси бізнес-логіки, `Data Access Layer` та `PostgreSQL Database 3NF`) розміщені всередині контуру системи. Зовнішні системи (`Payment Gateway`, `Notification Provider`, `Identity / Auth Provider`) винесені за межу системи та взаємодіють із ядром виключно через граничні інтерфейси (`IPaymentGatewayClient`, `IPaymentWebhook`, `INotificationGateway`, `IAuthVerify`).
+- **Повнота `provided` / `required` інтерфейсів:** кожна залежність (`required`) між компонентами з'єднана з відповідним інтерфейсом (`provided`), який реалізує цільовий модуль; безпосередніх звернень шару UI до сервісів або сервісів до таблиць БД в обхід `REST API Gateway` та `Data Access Layer` немає.
+
+#### 2. Матриця трасування компонентів до попередніх моделей (Лаби 1–4)
+
+| Компонент / Зовнішня система | Модель даних (Lab 1: ER) | Вимоги та UC (Lab 2) | Взаємодія (Lab 3: Sequence) | Процес (Lab 4: Activity) |
+| :--- | :--- | :--- | :--- | :--- |
+| **`Web Client UI`** | Оперує даними `Dish`, `Order`, `OrderItem` | Актор `Client` (`UC-1`, `UC-2`, `UC-5`, `UC-6`), `NFR-4`, `NFR-5` | Учасник `OrderUI` у Scenario 1–5 | Доріжка `Клієнт (Client)` |
+| **`REST API Gateway`** | Використовує ідентифікатори `UUID` | `POST /api/orders` (`NFR-1`), `TLS 1.3` (`NFR-3`), `RBAC` (`ADR-001`) | Точка прийому запитів UI та callback шлюзу | Вхідні/вихідні потоки на межі системи |
+| **`OrderService`** | Керує станами `Order` та записами `OrderItem` | `REQ-ORD-01`..`04`, `REQ-PAY-01`..`02` | Учасник `OrderService` у Scenario 1–5 | Доріжка `Система замовлень` (`S1`–`S6`, `S13`–`S17`) |
+| **`PromoConfigService`** | Працює без окремої таблиці в 3NF (`ADR-001`) | `UC-6`, `REQ-ORD-05` (статичні правила) | Учасник `PromoConfigService` у Scenario 3 | Кроки `S7`–`S9` (перевірка та перерахунок) |
+| **`PaymentService`** | Оновлює `Order.status` за `Order.created_at` | `UC-5`, `REQ-PAY-01`, `REQ-PAY-02` (15 хв) | Учасник `PaymentService` у Scenario 1, 4, 5 | Кроки `S10`–`S12`, очікування `WaitPay` |
+| **`Catalog & Operations Service`** | Читає `Restaurant`, `Dish`, оновлює `Order`, `Courier` | `UC-1`, `UC-3`, `UC-4` (поза деталлю `UC-2`) | Поза межами Scenario 1–5 (`UC-2`) | Прийом замовлення на межі з `UC-3` |
+| **`Data Access Layer`** | Інкапсулює всі 6 сутностей `er_diagram.mermaid` | Забезпечує цілісність збереження цін і статусів | Замінює прямі виклики до сутностей БД | Кроки читання/запису даних у БД |
+| **`PostgreSQL Database (3NF)`** | Повна реалізація 3NF-схеми (`er_diagram.mermaid`) | Незмінна схема релізу (`ADR-001`) | Стан сутностей `User`, `Restaurant`, `Dish`, `Order`, `OrderItem` | Постійне сховище станів процесу |
+| **`Payment Gateway` *(зовн.)*** | Без таблиці `Payment` у 3NF (`ADR-001`) | Вторинний актор `Payment Gateway` (`UC-5`) | Учасник `Платіжний шлюз` у Scenario 1, 4, 5 | Доріжка `Платіжний шлюз` (`G1`–`G3`) |
+| **`Notification Provider` *(зовн.)*** | Використовує контакти `User` та `Restaurant.id` | Повідомлення клієнту в Scenario 2, 4, 5 | Виклики `notifyRestaurant`, `notifyPaymentSuccess`, `notifyOrderCancelled` | Повідомлення №2, №7, №8, №9 |
+| **`Identity / Auth Provider` *(зовн.)*** | Перевіряє облікові дані `User` | Рольовий доступ `RBAC` для `Manager` (`ADR-001`) | Перевірка сесії клієнта перед створенням замовлення | Валідація користувача у блоці `Fork1` |
+
+#### 3. Топ-3 розбіжності (Компонентна діаграма ↔ Попередні моделі) та рішення
+1. **Виділення `Catalog & Operations Service` і `Data Access Layer` (Component Diagram ↔ Sequence / Activity):** у діаграмах 3-ї та 4-ї лаб деталізовано лише потік `UC-2` (`OrderService`, `PaymentService`, `PromoConfigService`), а звернення до БД показані напряму від сервісів до сутностей ER-моделі. **Рішення:** на компонентній діаграмі додано `Catalog & Operations Service` для повного архітектурного покриття решти прецедентів (`UC-1`, `UC-3`, `UC-4`) та виділено окремий шар `Data Access Layer` (`IOrderRepository`, `ICatalogRepository`), щоб ізолювати бізнес-логіку від SQL-запитів до 3NF-бази даних.
+2. **Зовнішні інтеграції `Notification Provider` та `Identity / Auth Provider` (Component Diagram ↔ Use Case Diagram):** на діаграмі прецедентів (`use_case_diagram.md`) із зовнішніх систем зображено лише `PaymentGateway`, тоді як сервіси сповіщень і автентифікації відсутні як актори. **Рішення:** винесено `Notification Provider` (`INotificationGateway`) та `Identity / Auth Provider` (`IAuthVerify`) за межу системи як інфраструктурні зовнішні системи, що реалізують доставку подій сповіщень із 3–4 лаб і рольову авторизацію RBAC із `ADR-001.md`.
+3. **Двосторонній обмін між `OrderService` та `PaymentService` (Component Diagram ↔ Sequence / Activity):** під час створення замовлення `OrderService` ініціює платіжну сесію через `PaymentService`, а після отримання webhook-повідомлення `PaymentService` викликає оновлення статусу замовлення в `OrderService`. **Рішення:** взаємодію між сервісами оформлено через явні контракти `IPaymentService` та `IOrderService`, що повністю відповідає викликам у Scenario 1, 4 і 5 третьої лаби.
